@@ -11,34 +11,50 @@ repository of brand images.
 
 ## Inner workings
 
-This repository provides two main folders to store images in:
+This repository provides three main folders to store images in:
 
 - `core_integrations`: Contains images for integrations bundled with the
   Home Assistant Core.
 - `custom_integrations`: Contains images for custom integrations
-  (custom components).
+  (custom components). Legacy folder: Since HA 2026.3.0, custom components can include their brand icons directly. Please refer to the [Brands Proxy API announcement](https://contributors.home-assistant.io/blog/2026/02/24/brands-proxy-api/) for more details.
+- `thread_brands`: Contains images for brands that do not have an integration
+  at all, but are used to display Thread border routers. See
+  [Thread brands](#thread-brands) below.
 
-Each of these two main folders contain domain folders. Each domain folder is
+Each of these main folders contains domain folders. Each domain folder is
 named to the integration `domain` and must match the domain set in the
-integration `manifest.json` file.
+integration `manifest.json` file. For `thread_brands`, the folder name must
+match the brand used in the Thread integration instead.
 
-A domain folder can contain four files:
+A domain folder can contain eight files:
 
 - `icon.png`: A square avatar-like icon, representing the brand or product for that domain.
+- `dark_icon.png`: Dark optimised icon (if required).
 - `logo.png`: The logo of the brand or product for that domain.
+- `dark_logo.png`: Dark optimised logo (if required).
 - `icon@2x.png`: hDPI version of `icon.png`
+- `dark_icon@2x.png`: hDPI version of `dark_icon.png`
 - `logo@2x.png`: hDPI version of `logo.png`
+- `dark_logo@2x.png`: hDPI version of `dark_logo.png`
 
 Those images are served in the following format:
 
 - `https://brands.home-assistant.io/[domain]/icon.png`
+- `https://brands.home-assistant.io/[domain]/dark_icon.png`
 - `https://brands.home-assistant.io/[domain]/logo.png`
+- `https://brands.home-assistant.io/[domain]/dark_logo.png`
 - `https://brands.home-assistant.io/[domain]/icon@2x.png`
+- `https://brands.home-assistant.io/[domain]/dark_icon@2x.png`
 - `https://brands.home-assistant.io/[domain]/logo@2x.png`
+- `https://brands.home-assistant.io/[domain]/dark_logo@2x.png`
 - `https://brands.home-assistant.io/_/[domain]/icon.png`
+- `https://brands.home-assistant.io/_/[domain]/dark_icon.png`
 - `https://brands.home-assistant.io/_/[domain]/logo.png`
+- `https://brands.home-assistant.io/_/[domain]/dark_logo.png`
 - `https://brands.home-assistant.io/_/[domain]/icon@2x.png`
+- `https://brands.home-assistant.io/_/[domain]/dark_icon@2x.png`
 - `https://brands.home-assistant.io/_/[domain]/logo@2x.png`
+- `https://brands.home-assistant.io/_/[domain]/dark_logo@2x.png`
 
 ### Missing image handling
 
@@ -55,8 +71,10 @@ For example: <`https://brands.home-assistant.io/[domain]/icon.png`>
 - If a domain is missing the `icon.png` file, 404 will be served
 - If a domain is missing the `logo.png` file, the `icon.png` is served instead (if available).
 - If a domain is missing the `icon@2x.png` file, the `icon.png` is served instead (if available).
-- If a domain is missing the `logo@2x.png` file, the `logo.png` is served instead (if available).
-- If a image optimised for dark themes (image is prefixed with 'dark_') is missing, it's non-prefixed match will be served instead (if available).
+- If a domain is missing the `logo@2x.png` file:
+  - the `icon@2x.png` is served if available and `logo.png` is missing
+  - the `logo.png` is served instead (if available).
+- If an image optimized for dark themes (image is prefixed with 'dark_') is missing, its non-prefixed match will be served instead (if available).
 
 ### With placeholder fallback
 
@@ -68,15 +86,51 @@ For example: <`https://brands.home-assistant.io/_/[domain]/icon.png`>
 
 ### Caching
 
-All icons are cached on the client-side browser end for 900 seconds, and cached
-by Cloudflare for 604800 seconds.
+All icons and logos are cached by browsers for 7 days, so additions and changes may take time to reach all users. This gives users the full benefits of local caching with minimal revalidation, and protects against missing content during an internet outage.
 
-Placeholder images are excepted from this. Placeholder images have a 900 seconds
-cache on the client-side and are cached for 1 hour on Cloudflare. This allows
-us to replace placeholder images within an acceptable time frame without losing
-our cache.
+Images are simultaneously cached by Cloudflare for 24 hours. This allows changes to begin being distributed to users relatively quickly without losing the CDN benefits. It also guarantees a simple refresh (F5) will bring content no more than 1 day old.
 
-Image additions and changes may take time to take effect due to caching. The cache is fully flushed in each major version of Home Assistant Core.
+The Cloudflare cache is also fully flushed in each major version of Home Assistant Core.
+
+### Marketplace icons
+
+Custom integrations ship their images in a `brand` folder of their own
+nowadays, instead of adding them to this repository. Home Assistant shows
+those once the integration is installed. To show them in the Marketplace
+before that, this site serves them on a path of its own:
+
+`https://brands.home-assistant.io/marketplace/[domain]/icon.png`
+
+Only the Marketplace uses this path. It takes the same image names as above,
+with the same fallbacks, but has no placeholder.
+
+- An hourly function (`netlify/functions/marketplace-icons-sync.mts`) checks
+  which images the integrations in the Marketplace have at their latest
+  release, and keeps that list in Netlify Blobs. It only looks again when
+  a new release comes out, or after a week.
+- `netlify/functions/marketplace-icons.mts` serves the image straight from
+  the repository of the integration.
+- A 404 means the integration has no such image. When we do not know yet, or
+  GitHub is not answering, the answer is a 503, which Home Assistant does not
+  remember.
+
+To stop showing the images of an integration, add its domain to
+`netlify/marketplace-icons-blocklist.json`, with the reason as the value:
+
+```json
+{
+  "example_domain": "Uses the logo of another company"
+}
+```
+
+To turn the whole thing off without a code change, publish an earlier deploy
+in Netlify from before these functions were added.
+
+The functions need Node.js (see `.nvmrc`). `npm test` runs the tests,
+`npm run check` the type checks. `node scripts/marketplace-icons-sync.ts index.json`
+runs the sync locally against a JSON file, with `GITHUB_TOKEN` set if you have
+one. In Netlify, `MARKETPLACE_ICONS_GITHUB_TOKEN` is that token; it only needs
+access to public repositories.
 
 ## Image specification
 
@@ -85,7 +139,7 @@ All images must have the following requirements:
 - The filetype of all images must be PNG.
 - They should be properly compressed and optimized (lossless is preferred) for use on the web.
 - Interlaced is preferred (also known as progressive).
-- Images with transparency is preferred.
+- Images with transparency are preferred.
 - If multiple images are available, the ones optimized for a white background are preferred.
   - Images optimized for a dark background can be prefixed with `dark_`
 - The image should be trimmed, so it contains the minimum amount of empty space on the edges.
@@ -99,8 +153,9 @@ Additional to the general image requirements listed above, for the icon image,
 the following requirements are applied as well:
 
 - Aspect ratio needs to be 1:1 (square).
-- Icon size must be 256x256 pixels, for the hDPI this is 512x512 pixels.
-- The maximum icon pixel size is, of course, preferred.
+- Icon size must be:
+  - 256x256 pixels for normal version.
+  - 512x512 pixels for the hDPI version.
 
 ### Logo image requirements
 
@@ -109,8 +164,9 @@ the following requirements are applied as well:
 
 - A landscape image is preferred.
 - Aspect ratio should respect the logo of the brand.
-- The shortest side of the image must be at least 128 pixels, 256 pixels for the hDPI version.
-- The shortest side of the image must be no bigger than 256 pixels, 512 pixels for the hDPI version.
+- The shortest side of the image must be:
+  - At least 128 pixels, but no bigger than 256 pixels for the normal version.
+  - At least 256 pixels, but no bigger than 512 pixels for the hDPI version.
 - The maximum pixel size for the shortest side of the images is, of course, preferred.
 
 ## Using the same image for logo & icon
@@ -134,16 +190,39 @@ Symlinks are currently not allowed in the custom integrations folder.
 The names of directories must always match the integration domain. Additional
 directories are not allowed.
 
+## Thread brands
+
+Home Assistant shows an image for every discovered Thread border router. The
+vendor name advertised by the border router is mapped to a brand in the
+[`KNOWN_BRANDS`][known-brands] mapping of the Thread integration in Home
+Assistant Core, and that brand is then used to look up an image in this
+repository.
+
+Most of those brands belong to an integration, so their images are already in
+`core_integrations` (or, historically, in `custom_integrations`). The remaining
+ones have no integration at all, and live in the `thread_brands` folder.
+
+**Do not remove folders from `thread_brands`** when cleaning up integration
+images: these domains intentionally do not have a matching integration. A
+folder should only be removed here when the brand is dropped from
+`KNOWN_BRANDS` in Home Assistant Core, or when an integration with the same
+domain is added (in that case the images move to `core_integrations`).
+
+Images in `thread_brands` are served on the same URLs as integration images,
+so no URL changes are needed when a brand moves in or out of this folder.
+
+[known-brands]: https://github.com/home-assistant/core/blob/dev/homeassistant/components/thread/discovery.py
+
 ## Integration domain conflict between custom and core integrations
 
 It is possible for a custom integration and a core integration to collide on
-a `domain` name level. In these cases, the core integration domain get
+a `domain` name level. In these cases, the core integration domain gets
 preference.
 
 ## Tips, Tools & Resources
 
 When adding a new set of icons and logos, the following resources can help you
-finding the needed images and getting them to match our specifications:
+find the needed images and get them to match our specifications:
 
 - [**RedKetchup Image Resizer**](https://redketchup.io/image-resizer):
   Resizes most images formats, including SVG, into any format using just your

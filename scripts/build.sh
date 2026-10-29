@@ -16,6 +16,12 @@ git clone --depth=1 https://github.com/Templarian/MaterialDesign mdi
 rsync -aL custom_integrations/ build/_
 rsync -aL custom_integrations/ build
 
+# Copy thread brands
+# These have no integration of their own, they only provide images for
+# Thread border routers. They are served on the same paths as integrations.
+rsync -aL thread_brands/ build/_
+rsync -aL thread_brands/ build
+
 # Copy core integrations 
 rsync -aL --exclude '_homeassistant' core_integrations/ build/_
 rsync -aL --exclude '_homeassistant' --exclude '_placeholder' core_integrations/ build
@@ -49,12 +55,26 @@ find ./build -type f -name "icon.txt" | while read icon; do
   echo "Generated mdi:${mdi} for ${icon}"
 done
 
+# Use icon@2x as logo@2x in case of a missing logo@2x and no dedicated logo is provided for better resolution
+# This check must before the missing logo check
+find ./build -type f -name "icon@2x.png" | while read icon; do
+  dir=$(dirname "${icon}")
+  if [[ ! -f "${dir}/logo2x.png" && ! -f "${dir}/logo.png" ]]; then
+    cp "${icon}" "${dir}/logo@2x.png"
+    echo "Using ${icon} as hDPI logo because no logo is provided"
+  fi
+done
+
 # Use icon as logo in case of a missing logo
 find ./build -type f -name "icon.png" | while read icon; do
   dir=$(dirname "${icon}")
   if [[ ! -f "${dir}/logo.png" ]]; then
     cp "${icon}" "${dir}/logo.png"
     echo "Using ${icon} as logo"
+  fi
+  if [[ ! -f "${dir}/dark_logo.png" ]] && [[ -f "${dir}/dark_icon.png" ]]; then
+    cp "${dir}/dark_icon.png" "${dir}/dark_logo.png"
+    echo "Using ${dir}/dark_icon.png as dark_logo"
   fi
 done
 
@@ -64,6 +84,10 @@ find ./build -type f -name "icon.png" | while read icon; do
   if [[ ! -f "${dir}/icon@2x.png" ]]; then
     cp "${icon}" "${dir}/icon@2x.png"
     echo "Using ${icon} as hDPI icon"
+  fi
+  if [[ ! -f "${dir}/dark_logo@2x.png" ]] && [[ -f "${dir}/dark_icon@2x.png" ]]; then
+    cp "${dir}/dark_icon@2x.png" "${dir}/dark_logo@2x.png"
+    echo "Using ${dir}/dark_icon@2x.png as dark_logo@2x"
   fi
 done
 
@@ -90,6 +114,10 @@ find ./build/brands -type f -name "icon.png" | while read icon; do
     cp "${icon}" "${dir}/logo.png"
     echo "Using ${icon} as logo"
   fi
+  if [[ ! -f "${dir}/dark_logo.png" ]] && [[ -f "${dir}/dark_icon.png" ]]; then
+    cp "${dir}/dark_icon.png" "${dir}/dark_logo.png"
+    echo "Using ${dir}/dark_icon.png as dark_logo"
+  fi
 done
 
 # Use brand icon as icon@2x in case it is missing
@@ -98,6 +126,10 @@ find ./build/brands -type f -name "icon.png" | while read icon; do
   if [[ ! -f "${dir}/icon@2x.png" ]]; then
     cp "${icon}" "${dir}/icon@2x.png"
     echo "Using ${icon} as hDPI icon"
+  fi
+  if [[ ! -f "${dir}/dark_logo@2x.png" ]] && [[ -f "${dir}/dark_icon@2x.png" ]]; then
+    cp "${dir}/dark_icon@2x.png" "${dir}/dark_logo@2x.png"
+    echo "Using ${dir}/dark_icon@2x.png as dark_logo@2x"
   fi
 done
 
@@ -136,32 +168,45 @@ done
 # Create domains.json
 core_brands=$(
   find ./core_brands \
+    -mindepth 1 \
     -maxdepth 1 \
     -exec basename {} \; \
   | sort \
-  | jq -sR 'split("\n")[1:]' \
+  | jq -sR 'split("\n")' \
   | jq -r 'map(select(length > 0))'
 )
 
 core_integrations=$(
   find ./core_integrations \
+    -mindepth 1 \
     -maxdepth 1 \
     -exec basename {} \; \
   | sort \
-  | jq -sR 'split("\n")[1:]' \
+  | jq -sR 'split("\n")' \
   | jq -r 'map(select(length > 0))'
 )
 custom_integrations=$(
   find ./custom_integrations \
+    -mindepth 1 \
     -maxdepth 1 \
     -exec basename {} \; \
   | sort \
-  | jq -sR 'split("\n")[1:]' \
+  | jq -sR 'split("\n")' \
+  | jq -r 'map(select(length > 0))'
+)
+thread_brands=$(
+  find ./thread_brands \
+    -mindepth 1 \
+    -maxdepth 1 \
+    -exec basename {} \; \
+  | sort \
+  | jq -sR 'split("\n")' \
   | jq -r 'map(select(length > 0))'
 )
 
-jq -n '{"brands": $brands, "core": $core, "custom": $custom}' \
+jq -n '{"brands": $brands, "core": $core, "custom": $custom, "thread": $thread}' \
     --argjson brands "$core_brands" \
     --argjson core "$core_integrations" \
     --argjson custom "$custom_integrations" \
+    --argjson thread "$thread_brands" \
   | jq -r . > ./build/domains.json
